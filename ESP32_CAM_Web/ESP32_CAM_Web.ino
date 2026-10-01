@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiManager.h>
 #include <esp_camera.h>
 #include <esp_http_server.h>
 #include <FS.h>
@@ -240,7 +239,7 @@ esp_err_t status_handler(httpd_req_t* req) {
   static char json[1024];
   sensor_t* s = esp_camera_sensor_get();
   unsigned long up = (millis() - bootTime) / 1000;
-  String ip = WiFi.localIP().toString();
+  String ip = WiFi.softAPIP().toString();
   snprintf(json, sizeof(json),
     "{\"uptime\":\"%02lu:%02lu:%02lu\",\"heap\":%u,\"psram\":%u,"
     "\"rssi\":%d,\"ip\":\"%s\",\"pid\":%u,\"framesize\":%u,\"quality\":%u,"
@@ -473,25 +472,19 @@ void setup() {
   if (!initSD()) Serial.println("SD not available");
   else Serial.println("SD OK");
 
-  // ==================== WiFiManager 配网 ====================
-  WiFiManager wm;
-  wm.setConfigPortalTimeout(180);
-  wm.setAPCallback([](WiFiManager* wm) {
-    Serial.println("AP 模式已启动，请连接 ESP32-CAM-Setup 配置 WiFi");
-    setLED(0, 0, 255);
-  });
-  bool ok = wm.autoConnect("ESP32-CAM-Setup");
-  if (!ok) {
-    Serial.println("配网超时，重启");
-    delay(3000);
-    ESP.restart();
-  }
-  setLED(0, 255, 0);
-  Serial.println("\nWiFi: " + WiFi.localIP().toString());
+  // ==================== 手动 AP 模式 ====================
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP32-CAM-Setup", "");
+  delay(500);
+  Serial.println("==================== AP 模式 ====================");
+  Serial.print("SSID: ESP32-CAM-Setup\nIP: ");
+  Serial.println(WiFi.softAPIP());
+  Serial.println("=================================================");
+  setLED(0, 0, 255);
   // ======================================================
 
   startServers();
-  Serial.println("Ready. Open http://" + WiFi.localIP().toString());
+  Serial.println("Ready. 浏览器访问 http://192.168.4.1");
 }
 
 void loop() {
