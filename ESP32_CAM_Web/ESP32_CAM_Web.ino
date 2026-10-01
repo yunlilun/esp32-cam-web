@@ -5,6 +5,7 @@
 #include <FS.h>
 #include <SD_MMC.h>
 #include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
 
 // ==================== 摄像头引脚 (OV3660) ====================
 #define PWDN_GPIO_NUM     -1
@@ -34,12 +35,14 @@
 Adafruit_NeoPixel led(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 httpd_handle_t cam_httpd = NULL;
-httpd_handle_t stream_httpd = NULL;
 unsigned long bootTime = 0;
 
 bool recording = false;
 File videoFile;
 int videoCounter = 0;
+
+Preferences prefs;
+String apPassword = "12345678";
 
 void setLED(uint8_t r, uint8_t g, uint8_t b) {
   led.setPixelColor(0, led.Color(r, g, b));
@@ -109,6 +112,7 @@ button:hover{filter:brightness(1.1)}button.red{background:var(--red)}button.gree
 select{width:100%;background:#0f1115;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px;font-size:13px}
 .sl{display:flex;align-items:center;gap:10px;margin:6px 0}.sl span:first-child{width:60px;font-size:12px;color:var(--sub)}.sl span:last-child{width:36px;text-align:right;font-size:12px;color:var(--accent);font-weight:600}
 input[type=range]{flex:1;background:#0f1115;border:1px solid var(--line);border-radius:6px;padding:0;height:6px}
+input[type=text],input[type=password]{width:100%;background:#0f1115;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px;font-size:13px}
 .fl{max-height:280px;overflow-y:auto;font-size:12px}
 .fi{display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--line)}
 .fi:hover{background:#232833}.fi .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fi .sz{color:var(--sub);margin:0 8px;font-size:11px}
@@ -173,18 +177,18 @@ input[type=range]{flex:1;background:#0f1115;border:1px solid var(--line);border-
 <div class="row"><label>IP 地址</label><span id="ip">--</span></div>
 <div class="row"><label>传感器</label><span id="sensor">--</span></div>
 </div>
+<div class="card"><h2>系统设置</h2>
+<div class="row"><label>AP 密码</label><input type="text" id="apPass" style="width:120px"></div>
+<div class="brow" style="margin-top:6px">
+<button class="sm" onclick="saveApPass()">保存密码</button>
+<button class="sm red" onclick="if(confirm('确定重启？'))location.href='/restart'">重启设备</button>
+</div>
+<div style="font-size:11px;color:var(--sub);margin-top:6px">密码至少 8 位，保存后需重启生效</div>
+</div>
 <div class="card"><h2>操作</h2>
 <div class="brow">
 <button class="sm" onclick="refreshAll()">刷新</button>
 <button class="sm ghost" onclick="resetAll()">恢复默认</button>
-<button class="sm red" onclick="if(confirm('确定重启？'))location.href='/restart'">重启</button>
-</div></div>
-<div class="card"><h2>说明</h2>
-<div style="font-size:12px;color:var(--sub);line-height:1.7">
-• 点击「开始视频流」加载画面<br>
-• 拍照会存 TF 卡并下载到电脑<br>
-• 录像格式 .mjpeg，用 VLC 播放<br>
-• TF 卡必须 FAT32 格式
 </div></div>
 </div>
 </div></div>
@@ -193,7 +197,7 @@ input[type=range]{flex:1;background:#0f1115;border:1px solid var(--line);border-
 <script>
 let streaming=false,frames=0,lastT=Date.now();
 const $=id=>document.getElementById(id);
-function startStream(){$('stream').src='http://'+location.hostname+':81/stream';streaming=true;frames=0;lastT=Date.now();
+function startStream(){$('stream').src='/stream?t='+Date.now();streaming=true;frames=0;lastT=Date.now();
 $('stream').onload=()=>frames++;
 setInterval(()=>{if(!streaming)return;const n=Date.now();$('fps').textContent='FPS: '+Math.round(frames*1000/(n-lastT));frames=0;lastT=n;},1000);toast('视频流已开始');}
 function stopStream(){$('stream').src='';streaming=false;$('fps').textContent='FPS: --';toast('已停止');}
@@ -219,8 +223,11 @@ $('brightness').value=d.brightness;$('v_brightness').textContent=d.brightness;
 $('contrast').value=d.contrast;$('v_contrast').textContent=d.contrast;
 $('saturation').value=d.saturation;$('v_saturation').textContent=d.saturation;
 setTg('t_hmirror',d.hmirror);setTg('t_vflip',d.vflip);
+if(d.apPass)$('apPass').value=d.apPass;
 $('dot').classList.add('on');$('ct').textContent='已连接';
 }).catch(()=>{$('dot').classList.remove('on');$('ct').textContent='未连接';});}
+function saveApPass(){var p=$('apPass').value;if(p.length<8){toast('密码至少8位',true);return;}
+fetch('/set_ap_pass?pass='+encodeURIComponent(p)).then(r=>r.json()).then(d=>{if(d.ok)toast('已保存，重启后生效');else toast('保存失败',true);});}
 function resetAll(){['brightness:0','contrast:0','saturation:0','quality:12','framesize:5','special_effect:0','wb_mode:0','hmirror:0','vflip:0'].forEach(s=>{const[k,v]=s.split(':');setVar(k,v);});toast('已恢复默认');setTimeout(refreshAll,500);}
 function fmt(b){if(!b)return'0 B';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';}
 let tt;function toast(m,e){const t=$('toast');t.textContent=m;t.className='toast show'+(e?' err':'');clearTimeout(tt);tt=setTimeout(()=>t.className='toast',2000);}
@@ -236,7 +243,7 @@ esp_err_t index_handler(httpd_req_t* req) {
 }
 
 esp_err_t status_handler(httpd_req_t* req) {
-  static char json[1024];
+  static char json[1200];
   sensor_t* s = esp_camera_sensor_get();
   unsigned long up = (millis() - bootTime) / 1000;
   String ip = WiFi.softAPIP().toString();
@@ -244,13 +251,14 @@ esp_err_t status_handler(httpd_req_t* req) {
     "{\"uptime\":\"%02lu:%02lu:%02lu\",\"heap\":%u,\"psram\":%u,"
     "\"rssi\":%d,\"ip\":\"%s\",\"pid\":%u,\"framesize\":%u,\"quality\":%u,"
     "\"brightness\":%d,\"contrast\":%d,\"saturation\":%d,"
-    "\"hmirror\":%u,\"vflip\":%u,\"special_effect\":%u,\"wb_mode\":%u,\"recording\":%d}",
+    "\"hmirror\":%u,\"vflip\":%u,\"special_effect\":%u,\"wb_mode\":%u,\"recording\":%d,"
+    "\"apPass\":\"%s\"}",
     up/3600, (up%3600)/60, up%60,
     (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(),
     WiFi.RSSI(), ip.c_str(), s->id.PID, s->status.framesize, s->status.quality,
     s->status.brightness, s->status.contrast, s->status.saturation,
     s->status.hmirror, s->status.vflip, s->status.special_effect, s->status.wb_mode,
-    recording ? 1 : 0);
+    recording ? 1 : 0, apPassword.c_str());
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_send(req, json, strlen(json));
 }
@@ -411,6 +419,22 @@ esp_err_t record_handler(httpd_req_t* req) {
   return httpd_resp_send(req, recording ? "{\"recording\":true}" : "{\"recording\":false}", HTTPD_RESP_USE_STRLEN);
 }
 
+esp_err_t set_ap_pass_handler(httpd_req_t* req) {
+  char buf[128], pass[64];
+  if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) != ESP_OK) return httpd_resp_send_500(req);
+  if (httpd_query_key_value(buf, "pass", pass, sizeof(pass)) != ESP_OK) return httpd_resp_send_500(req);
+  if (strlen(pass) < 8) {
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"ok\":false,\"msg\":\"密码至少8位\"}", HTTPD_RESP_USE_STRLEN);
+  }
+  apPassword = String(pass);
+  prefs.begin("cam", false);
+  prefs.putString("ap_pass", apPassword);
+  prefs.end();
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, "{\"ok\":true}", 11);
+}
+
 esp_err_t restart_handler(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, "{\"ok\":true}", 11);
@@ -419,21 +443,25 @@ esp_err_t restart_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
-// ==================== 启动服务器 ====================
+// ==================== 启动服务器（单端口 80） ====================
 void startServers() {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.max_uri_handlers = 16;
+  cfg.max_open_sockets = 4;
+  cfg.lru_purge_enable = true;
   if (httpd_start(&cam_httpd, &cfg) == ESP_OK) {
     httpd_uri_t u1 = {"/", HTTP_GET, index_handler, NULL};
     httpd_uri_t u2 = {"/status", HTTP_GET, status_handler, NULL};
     httpd_uri_t u3 = {"/control", HTTP_GET, control_handler, NULL};
     httpd_uri_t u4 = {"/capture", HTTP_GET, capture_handler, NULL};
-    httpd_uri_t u5 = {"/list", HTTP_GET, list_handler, NULL};
-    httpd_uri_t u6 = {"/download", HTTP_GET, download_handler, NULL};
-    httpd_uri_t u7 = {"/delete", HTTP_GET, delete_handler, NULL};
-    httpd_uri_t u8 = {"/delete_all", HTTP_GET, delete_all_handler, NULL};
-    httpd_uri_t u9 = {"/record", HTTP_GET, record_handler, NULL};
-    httpd_uri_t u10 = {"/restart", HTTP_GET, restart_handler, NULL};
+    httpd_uri_t u5 = {"/stream", HTTP_GET, stream_handler, NULL};
+    httpd_uri_t u6 = {"/list", HTTP_GET, list_handler, NULL};
+    httpd_uri_t u7 = {"/download", HTTP_GET, download_handler, NULL};
+    httpd_uri_t u8 = {"/delete", HTTP_GET, delete_handler, NULL};
+    httpd_uri_t u9 = {"/delete_all", HTTP_GET, delete_all_handler, NULL};
+    httpd_uri_t u10 = {"/record", HTTP_GET, record_handler, NULL};
+    httpd_uri_t u11 = {"/set_ap_pass", HTTP_GET, set_ap_pass_handler, NULL};
+    httpd_uri_t u12 = {"/restart", HTTP_GET, restart_handler, NULL};
     httpd_register_uri_handler(cam_httpd, &u1);
     httpd_register_uri_handler(cam_httpd, &u2);
     httpd_register_uri_handler(cam_httpd, &u3);
@@ -444,20 +472,18 @@ void startServers() {
     httpd_register_uri_handler(cam_httpd, &u8);
     httpd_register_uri_handler(cam_httpd, &u9);
     httpd_register_uri_handler(cam_httpd, &u10);
-  }
-
-  httpd_config_t scfg = HTTPD_DEFAULT_CONFIG();
-  scfg.server_port = 81;
-  scfg.ctrl_port = 32769;
-  if (httpd_start(&stream_httpd, &scfg) == ESP_OK) {
-    httpd_uri_t us = {"/stream", HTTP_GET, stream_handler, NULL};
-    httpd_register_uri_handler(stream_httpd, &us);
+    httpd_register_uri_handler(cam_httpd, &u11);
+    httpd_register_uri_handler(cam_httpd, &u12);
   }
 }
 
 void setup() {
   Serial.begin(115200);
   bootTime = millis();
+
+  prefs.begin("cam", true);
+  apPassword = prefs.getString("ap_pass", "12345678");
+  prefs.end();
 
   led.begin();
   led.setBrightness(50);
@@ -472,16 +498,16 @@ void setup() {
   if (!initSD()) Serial.println("SD not available");
   else Serial.println("SD OK");
 
-  // ==================== 手动 AP 模式 ====================
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP32-CAM-Setup", "");
+  WiFi.softAP("ESP32-CAM-Setup", apPassword.c_str());
   delay(500);
   Serial.println("==================== AP 模式 ====================");
-  Serial.print("SSID: ESP32-CAM-Setup\nIP: ");
+  Serial.print("SSID: ESP32-CAM-Setup\nPassword: ");
+  Serial.println(apPassword);
+  Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
   Serial.println("=================================================");
   setLED(0, 0, 255);
-  // ======================================================
 
   startServers();
   Serial.println("Ready. 浏览器访问 http://192.168.4.1");
