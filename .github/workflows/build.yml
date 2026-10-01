@@ -16,18 +16,15 @@ jobs:
               source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
           libraries: |
             - name: Adafruit NeoPixel
-            - name: WiFiManager
           sketch-paths: |
             - 'ESP32_CAM_Web'
 
       - name: Find and copy bin files
+        if: always()
         run: |
           mkdir -p ${{ github.workspace }}/output
-          find ${{ github.workspace }} -name "*.bin" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          find ${{ github.workspace }} -name "*.elf" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          find /home/runner -name "*.bin" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          find /home/runner -name "*.elf" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
-          echo "=== 找到的文件 ==="
+          find /home /tmp /root ${{ github.workspace }} -name "*.bin" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
+          find /home /tmp /root ${{ github.workspace }} -name "*.elf" -type f -exec cp {} ${{ github.workspace }}/output/ \; 2>/dev/null || true
           ls -la ${{ github.workspace }}/output/
 
       - name: Upload firmware
@@ -36,3 +33,4 @@ jobs:
         with:
           name: firmware
           path: ${{ github.workspace }}/output/
+          if-no-files-found: warn
